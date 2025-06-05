@@ -1,0 +1,29 @@
+# Use Passenger to serve the Python app
+
+PassengerEnabled on
+
+PassengerAppRoot /home/steluohk/marketanalyzer.stellans.com
+
+PassengerBaseURI /
+
+
+
+# Specify your Python virtual environment
+
+PassengerPython /home/steluohk/virtualenv/marketanalyzer.stellans.com/3.11/bin/python
+
+
+
+# Optional: If you want to disable directory listings
+
+Options -Indexes
+
+
+
+# DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS CONFIGURATION BEGIN
+
+<IfModule Litespeed>
+
+</IfModule>
+
+# DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS CONFIGURATION END

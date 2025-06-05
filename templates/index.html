@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>📊 Stock Analyzer</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f4f6f8;
+            padding: 20px;
+            color: #333;
+        }
+        form, table {
+            margin-bottom: 20px;
+        }
+        select, button {
+            padding: 6px 10px;
+            font-size: 1rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+            cursor: pointer;
+        }
+        th {
+            background: #3498db;
+            color: white;
+        }
+        .recommendation {
+            background: #e8f5e9;
+            border-left: 6px solid #43a047;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-size: 1.1rem;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0; top: 0;
+            width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+        }
+        .modal-content {
+            background: white;
+            margin: 5% auto;
+            padding: 20px;
+            width: 60%;
+            border-radius: 8px;
+            height: 420px;
+            display: flex;
+            flex-direction: column;
+        }
+        .close {
+            float: right;
+            font-size: 24px;
+            cursor: pointer;
+        }
+        .chart-controls {
+            margin-bottom: 10px;
+        }
+        canvas {
+            flex-grow: 1;
+        }
+    </style>
+</head>
+<body>
+
+<h1>📊 Stock Analyzer</h1>
+
+<form method="post">
+    <label>Ticker:</label>
+    <select name="ticker" required>
+        {% for t in ['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'TSLA', 'META', 'NVDA', 'NFLX'] %}
+            <option value="{{ t }}" {% if ticker == t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+    </select>
+
+    <label>Period:</label>
+    <select name="period">
+        {% for p in ['1mo', '3mo', '6mo', '1y'] %}
+            <option value="{{ p }}" {% if period == p %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+    </select>
+
+    <label>Interval:</label>
+    <select name="interval">
+        <option value="1d" {% if interval == '1d' %}selected{% endif %}>1d</option>
+        <option value="1wk" {% if interval == '1wk' %}selected{% endif %}>1wk</option>
+    </select>
+    <button type="submit">Analyze</button>
+</form>
+
+{% if recommendation %}
+    <div class="recommendation">
+        <strong>📢 Trading Signal:</strong> {{ recommendation }}
+    </div>
+{% endif %}
+
+{% if data is not none and data.shape[0] > 0 %}
+    <h2>📄 Last 20 Records for {{ ticker }}</h2>
+    <table id="dataTable">
+        <thead>
+            <tr>
+                {% for col in data.columns %}
+                    <th>{{ col }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in data.itertuples(index=False) %}
+                <tr>
+                    {% for val in row %}
+                        <td>{{ val }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endif %}
+
+<!-- Modal -->
+<div id="dataModal" class="modal">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <div class="chart-controls">
+            <label>Chart Type:</label>
+            <select id="chartType">
+                <option value="trend">Trend</option>
+                <option value="bar">Bar</option>
+                <option value="pie">Pie</option>
+                <option value="line">Line</option>
+            </select>
+        </div>
+        <canvas id="cellChart"></canvas>
+    </div>
+</div>
+
+<script>
+    const modal = document.getElementById('dataModal');
+    const closeBtn = document.querySelector('.close');
+    const ctx = document.getElementById('cellChart').getContext('2d');
+    const chartTypeSelect = document.getElementById('chartType');
+    let chart;
+
+    let currentLabel = '';
+    let currentValue = 0;
+    let currentSeries = [];
+    let currentDates = [];
+
+    closeBtn.onclick = () => modal.style.display = 'none';
+    window.onclick = e => { if (e.target === modal) modal.style.display = 'none'; };
+
+    function renderChart(type) {
+        if (chart) chart.destroy();
+
+        if (type === 'pie') {
+            const dataObj = {
+                labels: ['Selected', 'Remaining'],
+                datasets: [{
+                    label: currentLabel,
+                    data: [currentValue, 100 - currentValue],
+                    backgroundColor: ['#3498db', '#ecf0f1'],
+                    borderWidth: 1
+                }]
+            };
+            chart = new Chart(ctx, {
+                type,
+                data: dataObj,
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `Pie Chart – ${currentLabel}`
+                        }
+                    }
+                }
+            });
+        } else if (type === 'bar') {
+            const dataObj = {
+                labels: currentDates,
+                datasets: [{
+                    label: currentLabel,
+                    data: currentSeries,
+                    backgroundColor: 'rgba(52, 152, 219, 0.7)',
+                    borderColor: 'rgba(52, 152, 219, 1)',
+                    borderWidth: 1,
+                }]
+            };
+            chart = new Chart(ctx, {
+                type: 'bar',
+                data: dataObj,
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `Bar Chart – ${currentLabel} (Last 20 records)`
+                        },
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { maxRotation: 90, minRotation: 45 },
+                            title: { display: true, text: 'Date' }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: currentLabel }
+                        }
+                    }
+                }
+            });
+        } else if (type === 'line') {
+            const dataObj = {
+                labels: [currentLabel],
+                datasets: [{
+                    label: currentLabel,
+                    data: [currentValue],
+                    backgroundColor: 'rgba(52,152,219,0.7)',
+                    borderWidth: 1
+                }]
+            };
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: dataObj,
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `Line Chart – ${currentLabel}`
+                        }
+                    },
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        } else if (type === 'trend') {
+            if (currentSeries.length === 0) return;
+
+            const dataObj = {
+                labels: currentDates.length ? currentDates : currentSeries.map((_, i) => i + 1),
+                datasets: [{
+                    label: `${currentLabel} (↑ green, ↓ red)`,
+                    data: currentSeries,
+                    borderWidth: 2,
+                    borderColor: '#00000000',
+                    backgroundColor: 'rgba(0,0,0,0)',
+                    segment: {
+                        borderColor: ctx => {
+                            const prev = ctx.p0.parsed.y;
+                            const next = ctx.p1.parsed.y;
+                            return next >= prev ? '#2ecc71' : '#e74c3c';
+                        }
+                    }
+                }]
+            };
+
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: dataObj,
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `Trend Chart – ${currentLabel}`
+                        }
+                    },
+                    scales: {
+                        y: { beginAtZero: false }
+                    }
+                }
+            });
+        }
+    }
+
+    document.querySelectorAll('#dataTable td').forEach(cell => {
+        cell.addEventListener('click', () => {
+            const val = parseFloat(cell.textContent.replace(/,/g, ''));
+            if (isNaN(val)) return;
+
+            const colIndex = cell.cellIndex;
+            const header = document.querySelectorAll('#dataTable th')[colIndex].textContent;
+            currentLabel = header;
+            currentValue = val;
+
+            currentSeries = [];
+            currentDates = [];
+            document.querySelectorAll('#dataTable tbody tr').forEach(tr => {
+                const raw = tr.children[colIndex].textContent.replace(/,/g, '');
+                const num = parseFloat(raw);
+                if (!isNaN(num)) {
+                    currentSeries.push(num);
+                    currentDates.push(tr.children[0].textContent);  // assuming 1st col is date
+                }
+            });
+
+            renderChart(chartTypeSelect.value);
+            modal.style.display = 'block';
+        });
+    });
+
+    chartTypeSelect.addEventListener('change', () => {
+        if (modal.style.display === 'block') renderChart(chartTypeSelect.value);
+    });
+</script>
+
+</body>
+</html>
