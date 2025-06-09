@@ -32,6 +32,4 @@
   - `pandas` and `numpy` for data processing
   - `matplotlib` or `Chart.js` for visualization
 
----
-
 
