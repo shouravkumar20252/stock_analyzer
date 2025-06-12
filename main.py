@@ -18,4 +18,4 @@ def analyze(ticker):
     print(sells[['Close', 'RSI', 'MACD', 'MACD_signal']])
 
 if __name__ == "__main__":
-    analyze('AAPL')  # Change ticker or period in fetcher.py if you want
+    analyze('AAPL')  
